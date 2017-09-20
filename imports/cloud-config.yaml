@@ -1,0 +1,73 @@
+inputs:
+
+  backend_ip_1:
+    default: 127.0.0.1
+
+  backend_ip_2:
+    default: 127.0.0.1
+
+  backend_port:
+    default: 3306
+
+node_templates:
+
+  cloudify_host_cloud_config:
+    type: cloudify.nodes.CloudInit.CloudConfig
+    properties:
+      resource_config:
+        users:
+        - name: { get_input: agent_user }
+          primary-group: wheel
+          shell: /bin/bash
+          sudo: ['ALL=(ALL) NOPASSWD:ALL']
+          ssh-authorized-keys:
+          - { get_secret: agent_key_public }
+        write_files:
+        - path: /etc/haproxy/haproxy.cfg.template
+          owner: root:root
+          permissions: '0777'
+          content: |
+            global
+                log 127.0.0.1 local0 notice
+                user haproxy
+                group haproxy
+            defaults
+                log global
+                retries 2
+                timeout connect 3000
+                timeout server 5000
+                timeout client 5000
+            listen stats 0.0.0.0:9000
+                mode http
+                balance
+                timeout client 5000
+                timeout connect 4000
+                timeout server 30000
+                stats uri /haproxy_stats
+                stats realm HAProxy\ Statistics
+                stats auth admin:password
+                stats admin if TRUE
+            frontend {{frontend_id}}
+                option forceclose
+                bind *:{{frontend_port}}
+                default_backend {{default_backend}}
+            backend {{default_backend}}
+                option forceclose
+            {% for id, backend in backends.iteritems() %}    server {{ id }} {{ backend.address }}:{{ backend.port }} maxconn {{ backend.maxconn }}
+            {% endfor %}
+        packages:
+        - [haproxy]
+        runcmd:
+        - "setsebool -P haproxy_connect_any=1"
+        - "systemctl enable haproxy"
+        - "systemctl start haproxy"
+
+  cloud_config_completion:
+    type: cloudify.nodes.Root
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        create:
+          implementation: scripts/cloud_config_completion/create.py
+    relationships:
+      - type: cloudify.relationships.contained_in
+        target: host
