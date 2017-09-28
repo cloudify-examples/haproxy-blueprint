@@ -56,6 +56,8 @@ node_templates:
             frontend_port: { get_input: application_port }
             update_backends:
               server1: { get_input: backend }
+        update:
+          implementation: scripts/haproxy/update.py
         delete:
           implementation: scripts/haproxy/update.py
           inputs:

@@ -15,10 +15,13 @@ from tempfile import NamedTemporaryFile
 
 
 def execute(command):
-    return subprocess.Popen(
+    ctx.logger.debug('RUNNING: {0}'.format(command))
+    out = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
         shell=True)
+    ctx.logger.debug('OUT: {0}'.format(out))
+    return out
 
 
 def systemctl(state):
@@ -103,11 +106,6 @@ if __name__ == '__main__':
     haproxy_cfg_template_path = inputs.get('haproxy.cfg.template', '/etc/haproxy/haproxy.cfg.template')
     # Read the HAProxy config file.
     original_haproxy_cfg_path = read_file_as_sudo(haproxy_cfg_path)
-    # Make a backup of the HAProxy config file.
-    # TODO: Fix this.
-    # new_backup(original_haproxy_cfg_path)
-    # Read the HAProxy config file template.
-    # Initialize a template object.
     template_content = read_file_as_sudo(haproxy_cfg_template_path)
     template_content.seek(0)
     template = Template(template_content.getvalue())

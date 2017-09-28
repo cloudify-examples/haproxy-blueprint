@@ -1,0 +1,227 @@
+tosca_definitions_version: cloudify_dsl_1_3
+
+imports:
+  - https://raw.githubusercontent.com/cloudify-cosmo/cloudify-manager/4.1/resources/rest-service/cloudify/types/types.yaml
+  - http://www.getcloudify.org/spec/gcp-plugin/1.0/plugin.yaml
+  - https://raw.githubusercontent.com/cloudify-incubator/cloudify-utilities-plugin/1.2.5/plugin.yaml
+
+inputs:
+
+  client_x509_cert_url:
+    type: string
+    default: { get_secret: client_x509_cert_url }
+
+  client_email:
+    type: string
+    default: { get_secret: client_email }
+
+  client_id:
+    type: string
+    default: { get_secret: client_id }
+
+  project_id:
+    type: string
+    default: { get_secret: project_id }
+
+  private_key_id:
+    type: string
+    default: { get_secret: private_key_id }
+
+  private_key:
+    type: string
+    default: { get_secret: private_key }
+
+  zone:
+    type: string
+    default: { get_secret: zone }
+
+  region:
+    type: string
+    default: { get_secret: region }
+
+  image:
+    description: >
+      A GCE Image ID. Tested with a Ubuntu 14.04 image.
+    default: { get_secret: centos_core_image }
+
+  instance_type:
+    description: >
+      A GCE instance sytpe.
+    default: { get_secret: small_instance_type }
+
+  agent_user:
+    description: The user name of the agent on the instance created from the image.
+    default: centos
+
+  resource_prefix:
+    default: cfyhaproxy
+
+  application_ip:
+    type: string
+
+  application_port:
+    default: 3306
+
+  backend:
+    default:
+      address: { get_input: application_ip }
+      port: { get_input: application_port }
+      maxconn: 32
+
+dsl_definitions:
+
+  client_config: &gcp_config
+    auth:
+      type: service_account
+      auth_uri: https://accounts.google.com/o/oauth2/auth
+      token_uri: https://accounts.google.com/o/oauth2/token
+      auth_provider_x509_cert_url: https://www.googleapis.com/oauth2/v1/certs
+      client_x509_cert_url: { get_input: client_x509_cert_url }
+      client_email: { get_input: client_email }
+      client_id: { get_input: client_id }
+      project_id: { get_input: project_id }
+      private_key_id: { get_input: private_key_id }
+      private_key: { get_input: private_key }
+    project: { get_input: project_id }
+    zone: { get_input: zone }
+
+node_templates:
+
+  haproxy_configuration_updater:
+    type: cloudify.nodes.Root
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        create:
+          implementation: scripts/haproxy/update.py
+          inputs:
+            action: add
+            frontend_port: { get_input: application_port }
+            update_backends:
+              server1: { get_input: backend }
+        update:
+          implementation: scripts/haproxy/update.py
+        delete:
+          implementation: scripts/haproxy/update.py
+          inputs:
+            action: remove
+            frontend_port: { get_input: application_port }
+            update_backends:
+              manager: { get_input: backend }
+    relationships:
+    - type: cloudify.relationships.contained_in
+      target: host
+
+  host:
+    type: cloudify.gcp.nodes.Instance
+    properties:
+      gcp_config: *gcp_config
+      agent_config:
+        install_method: remote
+        user: { get_input: agent_user }
+        port: 22
+        key: { get_secret: agent_key_private }
+      image_id: { get_input: image }
+      instance_type: { get_input: instance_type }
+      zone: { get_input: zone }
+      external_ip: true
+      block_project_ssh_keys: true
+      startup_script:
+        type: string
+        script:
+          concat:
+          - |
+            yum -t -y install haproxy
+          - |
+            cat <<EOT >> /etc/haproxy/haproxy.cfg.template
+            global
+                log 127.0.0.1 local0 notice
+                user haproxy
+                group haproxy
+            defaults
+                log global
+                retries 2
+                timeout connect 3000
+                timeout server 5000
+                timeout client 5000
+            listen stats 0.0.0.0:9000
+                mode http
+                balance
+                timeout client 5000
+                timeout connect 4000
+                timeout server 30000
+                stats uri /haproxy_stats
+                stats realm HAProxy\ Statistics
+                stats auth admin:password
+                stats admin if TRUE
+            frontend {{frontend_id}}
+                option forceclose
+                bind *:{{frontend_port}}
+                default_backend {{default_backend}}
+            backend {{default_backend}}
+                option forceclose
+            {% for id, backend in backends.iteritems() %}    server {{ id }} {{ backend.address }}:{{ backend.port }} maxconn {{ backend.maxconn }}
+            {% endfor %}
+            EOT
+          - |
+            chown root:root /etc/haproxy/haproxy.cfg.template
+          - |
+            chmod 0777 /etc/haproxy/haproxy.cfg.template
+          - |
+            setsebool -P haproxy_connect_any=1
+          - |
+            systemctl enable haproxy
+          - |
+            systemctl start haproxy
+    relationships:
+      - type: cloudify.relationships.depends_on
+        target: subnetwork
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        create: &instance_ssh_key_prep
+          implementation: scripts/gcp/instance_ssh_key.py
+          executor: central_deployment_agent
+          inputs:
+            user: { get_input: agent_user }
+            ssh_keys:
+            - { get_secret: agent_key_public }
+
+  haproxy_fw:
+    type: cloudify.gcp.nodes.FirewallRule
+    properties:
+      gcp_config: *gcp_config
+      allowed:
+        tcp:
+          - 22
+          - 80
+          - 3306
+          - 8080
+          - 9000
+      sources:
+        - 0.0.0.0/0
+    relationships:
+      - type: cloudify.relationships.connected_to
+        target: network
+
+  subnetwork:
+    type: cloudify.gcp.nodes.SubNetwork
+    properties:
+      use_external_resource: true
+      name: { get_secret: management_subnetwork_name }
+      region: { get_secret: region }
+      gcp_config: *gcp_config
+    relationships:
+      - type: cloudify.gcp.relationships.contained_in_network
+        target: network
+
+  network:
+    type: cloudify.gcp.nodes.Network
+    properties:
+      use_external_resource: true
+      name: { get_secret: management_network_name }
+      gcp_config: *gcp_config
+
+outputs:
+
+  ip:
+    description: Public IP Address
+    value: { get_attribute: [ host, networkInterfaces, 0, accessConfigs, 0, natIP ] }
