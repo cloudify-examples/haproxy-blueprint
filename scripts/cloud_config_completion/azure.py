@@ -38,6 +38,8 @@ if __name__ == '__main__':
     ps = execute_command('ps -ef')
     for line in ps.split('\n'):
         haproxy_started = True if haproxy_process in line else False
+        if haproxy_started is True:
+            break
 
     if haproxy_started is not True:
         raise OperationRetry(
