@@ -77,7 +77,12 @@ if __name__ == '__main__':
         backends.update(update_backends)
     else:
         for key in update_backends.keys():
-            backends.pop(key)
+            try:
+                backends.pop(key)
+            except KeyError:
+                ctx.logger.error(
+                    'Failed to remove key {0} '
+                    'from backends: {1}'.format(key, backends))
     subject.instance.runtime_properties['backends'] = backends
     try:
         subject.instance.update()
