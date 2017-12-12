@@ -53,6 +53,9 @@ node_templates:
                 default_backend {{default_backend}}
             backend {{default_backend}}
                 option forceclose
+                option mysql-check user haproxy_check
+                balance roundrobin
+                mode tcp
             {% for id, backend in backends.iteritems() %}    server {{ id }} {{ backend.address }}:{{ backend.port }} maxconn {{ backend.maxconn }}
             {% endfor %}
         packages:
