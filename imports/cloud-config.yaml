@@ -58,6 +58,7 @@ node_templates:
                 mode tcp
                 timeout connect 1000
                 timeout check 300
+                timeout client 86400000
                 timeout server 86400000
             {% for id, backend in backends.iteritems() %}    server {{ id }} {{ backend.address }}:{{ backend.port }} maxconn {{ backend.maxconn }}
             {% endfor %}
