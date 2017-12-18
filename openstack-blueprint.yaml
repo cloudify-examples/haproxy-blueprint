@@ -37,7 +37,7 @@ inputs:
     default:
       address: { get_input: application_ip }
       port: { get_input: application_port }
-      maxconn: 32
+      maxconn: 4000
 
 dsl_definitions:
 
