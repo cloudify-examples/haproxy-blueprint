@@ -21,7 +21,7 @@ node_templates:
           shell: /bin/bash
           sudo: ['ALL=(ALL) NOPASSWD:ALL']
           ssh-authorized-keys:
-          - { get_secret: agent_key_public }
+          - { get_input: agent_key_public }
         write_files:
         - path: /etc/haproxy/haproxy.cfg.template
           owner: root:root
