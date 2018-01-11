@@ -1,141 +1,59 @@
-# HAProxy Example
+[![CircleCI](https://circleci.com/gh/cloudify-examples/haproxy-blueprint.svg?style=svg)](https://circleci.com/gh/cloudify-examples/haproxy-blueprint)
 
-This blueprint deploys a server with HAProxy installed on it. The create operation can be used to add and remove nodes to the haproxy backend.
+# HAProxy Blueprint
 
-_This example explains how to connect to a MySQL backend using HAProxy. Therefore, initially install the [mariadb example](https://github.com/cloudify-examples/mariadb-blueprint). Once that example is installed, continue below._
-
-
-## Deploy your HAProxy frontend with the MariaDB backend:
-
-```
-cfy deployments outputs mariadb
-Retrieving outputs for deployment mariadb...
- - "cluster_addresses":
-     Description: Cluster Addresses
-     Value: [u'192.168.121.10']
- - "master":
-     Description: master node ip
-     Value: 192.168.121.10
-```
-
-Now, install HAProxy:
-
-#### For AWS run:
-
-```shell
-$ cfy install \
-    https://github.com/cloudify-examples/haproxy-blueprint/archive/master.zip \
-    -b haproxy \
-    -n aws-blueprint.yaml
-```
+This blueprint deploys an HAProxy Load Balancer. This blueprint is part of the *End-to-end Solutions Package*, which demonstrates functionality in Cloudify using a Database, Load Balancer, and several front-end applications. Before installing this deployment, install the [MariaDB Blueprint](https://github.com/cloudify-examples/mariadb-blueprint), then continue with the solution package by installing the [Drupal Blueprint](https://github.com/cloudify-examples/drupal-blueprint).
 
 
-#### For Azure run:
+## Compatibility
 
-```shell
-$ cfy install \
-    https://github.com/cloudify-examples/haproxy-blueprint/archive/master.zip \
-    -b haproxy \
-    -n azure-blueprint.yaml
-```
+Tested with:
+  * Cloudify 4.2
 
 
-#### For Openstack run:
+## Pre-installation steps
 
-```shell
-$ cfy install \
-    https://github.com/cloudify-examples/haproxy-blueprint/archive/master.zip \
-    -b haproxy \
-    -n openstack-blueprint.yaml
-```
+Upload the required plugins:
 
-#### For GCP run:
+  * [Openstack Plugin](https://github.com/cloudify-cosmo/cloudify-openstack-plugin/releases).
+  * [AWSSDK Plugin](https://github.com/cloudify-incubator/cloudify-awssdk-plugin/releases).
+  * [AWS Plugin](https://github.com/cloudify-cosmo/cloudify-aws-plugin/releases).
+  * [GCP Plugin](https://github.com/cloudify-incubator/cloudify-gcp-plugin/releases).
+  * [Azure Plugin](https://github.com/cloudify-incubator/cloudify-azure-plugin/releases).
+  * [Utilities Plugin](https://github.com/cloudify-incubator/cloudify-utilities-plugin/releases).
 
-```shell
-$ cfy install \
-    https://github.com/cloudify-examples/haproxy-blueprint/archive/master.zip \
-    -b haproxy \
-    -n gcp-blueprint.yaml
-```
+_Check the relevant blueprint for the latest version of the plugin._
 
-For example, your output should look like this:
+**Install the relevant example network blueprint for the IaaS that you wish to deploy on:**
 
-```
-cfy install haproxy-blueprint/openstack-blueprint.yaml -b haproxy -i application_ip=192.168.121.10
-Uploading blueprint haproxy-blueprint/openstack-blueprint.yaml...
- openstack-bluepri... |################################################| 100.0%
-Blueprint uploaded. The blueprint's id is haproxy
-Creating new deployment from blueprint haproxy...
-Deployment created. The deployment's id is haproxy
-Executing workflow install on deployment haproxy [timeout=900 seconds]
-```
+  * [Openstack Example Network](https://github.com/cloudify-examples/openstack-example-network)
+  * [AWS Example Network](https://github.com/cloudify-examples/aws-example-network)
+  * [GCP Example Network](https://github.com/cloudify-examples/gcp-example-network)
+  * [Azure Example Network](https://github.com/cloudify-examples/azure-example-network)
 
-When install is successful, get the public IP of the load balancer:
+In addition to the pre-requisites for your example network blueprint, you will need the following secrets:
 
-```
-cfy deployments outputs haproxy
-Retrieving outputs for deployment haproxy...
- - "ip":
-     Description: Public IP Address
-     Value: 10.239.2.116
+  * `agent_key_private` and `agent_key_public`. If you do not already have these secrets, can generate them with the `keys.yaml` blueprint in the [helpful blueprint](https://github.com/cloudify-examples/helpful-blueprint) repo.
 
-```
+**Install the MariaDB Blueprint**
 
-## Test connection to MySQL:
+  * After installation is successful, check the deployment outputs. There is a single deployment output called `cluster_addresses`, which is a list of IP addresses. Select a single IP, this will be the value for your `application_ip` input in this blueprint, as a seed-IP.
 
-```
-telnet -e X 10.239.2.116 3306
-Telnet escape character is 'X'.
-Trying 10.239.1.60...
-Connected to 10.239.1.60.
-Escape character is 'X'.
-Y
-5.5.5-10.1.26-MariaDB%gW`Z#???e#xX0'mruscsmysql_native_passwordX
-telnet> ^C
-```
+## Installation
 
-## Add Backends:
+On your Cloudify Manager, navigate to _Local Blueprints_ select _Upload_.
 
-Scale the MariaDB Cluster:
+[Right-click and copy URL](https://github.com/cloudify-examples/haproxy-blueprint/archive/master.zip). Paste the URL where it says _Enter blueprint url_. Provide a blueprint name, such as _lb_ in the field labeled _blueprint name_.
 
-```
-  ::  cfy executions start scale -d mariadb -p scalable_entity_name=app_group
-Executing workflow scale on deployment mariadb [timeout=900 seconds]
-2017-09-26 07:54:22.707  CFY <mariadb> Starting 'scale' workflow execution
-```
+Select the blueprint for the relevant IaaS you wish to deploy on, for example _aws.yaml_ from _Blueprint filename_ menu. Click **Upload**.
 
-When the scale workflow has succeeded, check the updated cluster addresses:
+After the new blueprint has been created, provide the seed `application_ip` input (see Install the MariaDB Blueprint above) click the **Deploy** button.
 
-```
-cfy deployments outputs mariadb
-Retrieving outputs for deployment mariadb...
- - "cluster_addresses":
-     Description: Cluster Addresses
-     Value: [u'192.168.121.10', u'192.168.121.12']
- - "master":
-     Description: master node ip
-     Value: 192.168.121.10
-```
+Navigate to _Deployments_, find your new deployment, select _Install_ from the _workflow_s menu. At this stage, you may provide your own values for any of the default _deployment inputs_.
 
-Next update the inputs/execute-operation.yaml.example file with the haproxy_configuration_updater node instance id, and the next backend private IP.
+For example, the _openstack.yaml_ blueprint requires that you provide a value for `image`. This is the ID of a _Centos 7_ image. You may also need to override the default `flavor` as the default value `2` may not be available in your account or appropriate.
 
-Example file:
-```
-node_instance_ids: haproxy_configuration_updater_hpjz09
-operation: create
-allow_kwargs_override: true
-operation_kwargs:
-  frontend_port: 3306
-  update_backends:
-    server2:
-      address: 192.168.121.12
-      port: 3306
-      maxconn: 32
 
-```
+## Uninstallation
 
-Now update the backends on the HAProxy configuration:
-
-```
-cfy executions start execute_operation -vv -d ha -p haproxy-blueprint/inputs/execute-operation.yaml.example
-```
+Navigate to the deployment and select `Uninstall`. When the uninstall workflow is finished, select `Delete deployment`.
