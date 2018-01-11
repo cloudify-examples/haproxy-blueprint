@@ -141,6 +141,31 @@ node_templates:
               image: { get_input: image }
               flavor: { get_input: flavor }
               userdata: { get_attribute: [ cloudify_host_cloud_config, cloud_config ] }
+      cloudify.interfaces.monitoring_agent:
+        install:
+          implementation: diamond.diamond_agent.tasks.install
+          inputs:
+            diamond_config:
+              default:
+                interval: 1
+        start: diamond.diamond_agent.tasks.start
+        stop: diamond.diamond_agent.tasks.stop
+        uninstall: diamond.diamond_agent.tasks.uninstall
+      cloudify.interfaces.monitoring:
+        start:
+          implementation: diamond.diamond_agent.tasks.add_collectors
+          inputs:
+            collectors_config:
+              HAProxyCollector:
+                config:
+                  url: http://127.0.0.1:9000/haproxy_stats;csv
+              CPUCollector: {}
+              MemoryCollector: {}
+              LoadAverageCollector: {}
+              DiskUsageCollector:
+                config:
+                  devices: x?vd[a-z]+[0-9]*$
+              NetworkCollector: {}
     relationships:
     - type: cloudify.openstack.server_connected_to_port
       target: port

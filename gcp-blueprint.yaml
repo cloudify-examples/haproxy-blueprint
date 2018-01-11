@@ -3,7 +3,6 @@ tosca_definitions_version: cloudify_dsl_1_3
 imports:
   - http://www.getcloudify.org/spec/cloudify/4.2/types.yaml
   - http://www.getcloudify.org/spec/utilities-plugin/1.4.2.1/plugin.yaml
-  - http://www.getcloudify.org/spec/fabric-plugin/1.5/plugin.yaml
   - http://www.getcloudify.org/spec/diamond-plugin/1.3.5/plugin.yaml
   - http://www.getcloudify.org/spec/gcp-plugin/1.3.0.1/plugin.yaml
 
@@ -41,15 +40,31 @@ inputs:
     type: string
     default: { get_secret: region }
 
+  network_name:
+    type: string
+    default: { get_secret: ExampleNetworkID }
+
+  subnetwork_name:
+    type: string
+    default: { get_secret: ExampleSubnetAID }
+
+  agent_key_public:
+    type: string
+    default: { get_secret: agent_key_public }
+
+  agent_key_private:
+    type: string
+    default: { get_secret: agent_key_private }
+
   image:
     description: >
       A GCE Image ID. Tested with a Ubuntu 14.04 image.
-    default: { get_secret: centos_core_image }
+    default: { get_secret: ExamplesCentosCoreImage }
 
   instance_type:
     description: >
       A GCE instance sytpe.
-    default: { get_secret: small_instance_type }
+    default: { get_secret: ExamplesSmallImageSize }
 
   agent_user:
     description: The user name of the agent on the instance created from the image.
@@ -121,7 +136,7 @@ node_templates:
         install_method: remote
         user: { get_input: agent_user }
         port: 22
-        key: { get_secret: agent_key_private }
+        key: { get_input: agent_key_private }
       image_id: { get_input: image }
       instance_type: { get_input: instance_type }
       zone: { get_input: zone }
@@ -178,6 +193,31 @@ node_templates:
       - type: cloudify.relationships.depends_on
         target: subnetwork
     interfaces:
+      cloudify.interfaces.monitoring_agent:
+          install:
+            implementation: diamond.diamond_agent.tasks.install
+            inputs:
+              diamond_config:
+                default:
+                  interval: 1
+          start: diamond.diamond_agent.tasks.start
+          stop: diamond.diamond_agent.tasks.stop
+          uninstall: diamond.diamond_agent.tasks.uninstall
+      cloudify.interfaces.monitoring:
+        start:
+          implementation: diamond.diamond_agent.tasks.add_collectors
+          inputs:
+            collectors_config:
+              HAProxyCollector:
+                config:
+                  url: http://127.0.0.1:9000/haproxy_stats;csv
+              CPUCollector: {}
+              MemoryCollector: {}
+              LoadAverageCollector: {}
+              DiskUsageCollector:
+                config:
+                  devices: x?vd[a-z]+[0-9]*$
+              NetworkCollector: {}
       cloudify.interfaces.lifecycle:
         create: &instance_ssh_key_prep
           implementation: scripts/gcp/instance_ssh_key.py
@@ -185,7 +225,7 @@ node_templates:
           inputs:
             user: { get_input: agent_user }
             ssh_keys:
-            - { get_secret: agent_key_public }
+            - { get_input: agent_key_public }
 
   haproxy_fw:
     type: cloudify.gcp.nodes.FirewallRule
@@ -208,8 +248,8 @@ node_templates:
     type: cloudify.gcp.nodes.SubNetwork
     properties:
       use_external_resource: true
-      name: { get_secret: management_subnetwork_name }
-      region: { get_secret: region }
+      name: { get_input: subnetwork_name }
+      region: { get_input: region }
       gcp_config: *gcp_config
     relationships:
       - type: cloudify.gcp.relationships.contained_in_network
@@ -219,7 +259,7 @@ node_templates:
     type: cloudify.gcp.nodes.Network
     properties:
       use_external_resource: true
-      name: { get_secret: management_network_name }
+      name: { get_input: network_name }
       gcp_config: *gcp_config
 
 outputs:
