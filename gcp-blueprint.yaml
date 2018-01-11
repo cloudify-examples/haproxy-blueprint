@@ -124,6 +124,21 @@ node_templates:
             frontend_port: { get_input: application_port }
             update_backends:
               manager: { get_input: backend }
+      cloudify.interfaces.monitoring:
+        start:
+          implementation: diamond.diamond_agent.tasks.add_collectors
+          inputs:
+            collectors_config:
+              HAProxyCollector:
+                config:
+                  url: http://127.0.0.1:9000/haproxy_stats;csv
+              CPUCollector: {}
+              MemoryCollector: {}
+              LoadAverageCollector: {}
+              DiskUsageCollector:
+                config:
+                  devices: x?vd[a-z]+[0-9]*$
+              NetworkCollector: {}
     relationships:
     - type: cloudify.relationships.contained_in
       target: host
@@ -203,21 +218,6 @@ node_templates:
           start: diamond.diamond_agent.tasks.start
           stop: diamond.diamond_agent.tasks.stop
           uninstall: diamond.diamond_agent.tasks.uninstall
-      cloudify.interfaces.monitoring:
-        start:
-          implementation: diamond.diamond_agent.tasks.add_collectors
-          inputs:
-            collectors_config:
-              HAProxyCollector:
-                config:
-                  url: http://127.0.0.1:9000/haproxy_stats;csv
-              CPUCollector: {}
-              MemoryCollector: {}
-              LoadAverageCollector: {}
-              DiskUsageCollector:
-                config:
-                  devices: x?vd[a-z]+[0-9]*$
-              NetworkCollector: {}
       cloudify.interfaces.lifecycle:
         create: &instance_ssh_key_prep
           implementation: scripts/gcp/instance_ssh_key.py
