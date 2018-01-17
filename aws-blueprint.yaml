@@ -12,8 +12,8 @@ inputs:
 
   ami:
     description: >
-      An AWS AMI. Tested with a Centos 7.0 image.
-    default: { get_secret: centos_core_image }
+      An AWS AMI. Tested with a Centos 7.3 image.
+    default: { get_attribute: [ centos_core_ami, aws_resource_id ] }
 
   instance_type:
     description: >
@@ -140,12 +140,15 @@ node_templates:
         target: ip
       - type: cloudify.relationships.depends_on
         target: cloudify_host_cloud_config
+      - type: cloudify.relationships.depends_on
+        target: centos_core_ami
     interfaces:
       cloudify.interfaces.lifecycle:
         create:
           implementation: aws.cloudify_aws.ec2.instance.create
           inputs:
             args:
+              image_id: { get_input: ami }
               placement: { get_input: availability_zone }
               user_data: { get_attribute: [ cloudify_host_cloud_config, cloud_config ] }
       cloudify.interfaces.monitoring_agent:
@@ -158,6 +161,20 @@ node_templates:
         start: diamond.diamond_agent.tasks.start
         stop: diamond.diamond_agent.tasks.stop
         uninstall: diamond.diamond_agent.tasks.uninstall
+
+  centos_core_ami:
+    type: cloudify.nodes.aws.ec2.Image
+    properties:
+      resource_config:
+        kwargs:
+          Filters:
+          - Name: name
+            Values:
+            - 'CentOS 7.3.1611 x86_64 with cloud-init (HVM)'
+          - Name: owner-id
+            Values:
+            - '057448758665'
+      client_config: *aws_config
 
   security_group:
     type: cloudify.aws.nodes.SecurityGroup
