@@ -141,12 +141,8 @@ node_templates:
       image_id: { get_input: ami }
       instance_type: { get_input: instance_type }
     relationships:
-      - type: cloudify.aws.relationships.instance_connected_to_subnet
-        target: public_subnet
-      - type: cloudify.aws.relationships.instance_connected_to_security_group
-        target: security_group
-      - type: cloudify.aws.relationships.instance_connected_to_elastic_ip
-        target: ip
+      - type: cloudify.aws.relationships.instance_connected_to_eni
+        target: nic
       - type: cloudify.relationships.depends_on
         target: cloudify_host_cloud_config
       - type: cloudify.relationships.depends_on
@@ -185,53 +181,116 @@ node_templates:
             - '057448758665'
       client_config: *client_config
 
-  security_group:
-    type: cloudify.aws.nodes.SecurityGroup
+  nic:
+    type: cloudify.nodes.aws.ec2.Interface
     properties:
-      aws_config: *aws_config
-      description: Security group for Kubernetes Cluster
-      rules:
-        - ip_protocol: tcp
-          from_port: 0
-          to_port: 65535
-          cidr_ip: 0.0.0.0/0
-        - ip_protocol: udp
-          from_port: 0
-          to_port: 65535
-          cidr_ip: 0.0.0.0/0
-        - ip_protocol: icmp
-          from_port: -1
-          to_port: -1
-          cidr_ip: 0.0.0.0/0
+      client_config: *client_config
+      resource_config:
+        kwargs:
+          Description: Created by haproxy-blueprint aws-blueprint.yaml.
+          SubnetId: { get_input: public_subnet_id }
     relationships:
-      - type: cloudify.aws.relationships.security_group_contained_in_vpc
-        target: vpc
+      - type: cloudify.relationships.depends_on
+        target: public_subnet
+      - type: cloudify.relationships.depends_on
+        target: security_group
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        configure:
+          inputs:
+            resource_config:
+              Description: Created by haproxy-blueprint aws-blueprint.yaml.
+              SubnetId: { get_input: public_subnet_id }
+              Groups:
+              - { get_attribute: [ security_group, aws_resource_id ] }
 
   ip:
-    type: cloudify.aws.nodes.ElasticIP
+    type: cloudify.nodes.aws.ec2.ElasticIP
     properties:
-      aws_config: *aws_config
-      domain: vpc
+      resource_config:
+        kwargs:
+          Domain: 'vpc'
+      client_config: *client_config
+    relationships:
+      - type: cloudify.relationships.depends_on
+        target: nic
+
+  security_group_rules:
+    type: cloudify.nodes.aws.ec2.SecurityGroupRuleIngress
+    properties:
+      client_config: *client_config
+      resource_config:
+        kwargs:
+          IpPermissions:
+          - IpProtocol: tcp
+            FromPort: 0
+            ToPort: 65535
+            IpRanges:
+            - CidrIp: 0.0.0.0/0
+          - IpProtocol: udp
+            FromPort: 0
+            ToPort: 65535
+            IpRanges:
+            - CidrIp: 0.0.0.0/0
+          - IpProtocol: icmp
+            FromPort: -1
+            ToPort: -1
+            IpRanges:
+            - CidrIp: 0.0.0.0/0
+    relationships:
+    - type: cloudify.relationships.contained_in
+      target: security_group
+
+  security_group:
+    type: cloudify.nodes.aws.ec2.SecurityGroup
+    properties:
+      resource_config:
+        kwargs:
+          GroupName: SaltExampleSecurityGroup
+          Description: Created by salt-blueprint aws-blueprint.yaml.
+          VpcId: { get_input: vpc_id }
+      client_config: *client_config
+    relationships:
+    - type: cloudify.relationships.depends_on
+      target: vpc
 
   public_subnet:
-    type: cloudify.aws.nodes.Subnet
+    type: cloudify.nodes.aws.ec2.Subnet
     properties:
-      aws_config: *aws_config
+      client_config: *client_config
       use_external_resource: true
       resource_id: { get_input: public_subnet_id }
-      cidr_block: N/A
-      availability_zone: N/A
+      resource_config:
+        kwargs:
+          CidrBlock: 'N/A'
+          AvailabilityZone: 'N/A'
     relationships:
-      - type: cloudify.aws.relationships.subnet_contained_in_vpc
+      - type: cloudify.relationships.depends_on
+        target: vpc
+
+  private_subnet:
+    type: cloudify.nodes.aws.ec2.Subnet
+    properties:
+      client_config: *client_config
+      use_external_resource: true
+      resource_id: { get_input: private_subnet_id }
+      resource_config:
+        kwargs:
+          CidrBlock: 'N/A'
+          AvailabilityZone: 'N/A'
+    relationships:
+      - type: cloudify.relationships.depends_on
         target: vpc
 
   vpc:
-    type: cloudify.aws.nodes.VPC
+    type: cloudify.nodes.aws.ec2.Vpc
     properties:
-      aws_config: *aws_config
+      client_config: *client_config
       use_external_resource: true
       resource_id: { get_input: vpc_id }
-      cidr_block: N/A
+      resource_config:
+        kwargs:
+          CidrBlock: 'N/A'
 
 outputs:
 
