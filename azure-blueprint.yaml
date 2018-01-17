@@ -68,6 +68,9 @@ inputs:
       port: { get_input: application_port }
       maxconn: 32
 
+  manager_network:
+    default: default
+
 dsl_definitions:
 
   azure_config: &azure_config
@@ -205,8 +208,9 @@ node_templates:
               publicKeys: { get_input: ssh_public_keys }
             disablePasswordAuthentication: true
       agent_config:
-        user: { get_input: agent_user }
+        network: { get_input: manager_network }
         install_method: remote
+        user: { get_input: agent_user }
         port: 22
         key: { get_input: agent_key_private }
     interfaces:
