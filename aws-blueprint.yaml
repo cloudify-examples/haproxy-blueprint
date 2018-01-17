@@ -77,6 +77,11 @@ dsl_definitions:
       ec2_region_name: { get_secret: ec2_region_name }
       ec2_region_endpoint: { get_secret: ec2_region_endpoint }
 
+    client_config: &client_config
+      aws_access_key_id: { get_secret: aws_access_key_id }
+      aws_secret_access_key: { get_secret: aws_secret_access_key }
+      region_name: { get_secret: ec2_region_name }
+
 node_templates:
 
   haproxy_configuration_updater:
@@ -174,7 +179,7 @@ node_templates:
           - Name: owner-id
             Values:
             - '057448758665'
-      client_config: *aws_config
+      client_config: *client_config
 
   security_group:
     type: cloudify.aws.nodes.SecurityGroup
