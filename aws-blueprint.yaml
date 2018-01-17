@@ -36,12 +36,6 @@ inputs:
       This subnet should allow elastic IPs and it should also have either a NAT gateway or NAT instance.
     default: { get_secret: public_subnet_id }
 
-  private_subnet_id:
-    description: >
-      The ID of the private subnet in vpc_id.
-      This subnet should have internet routing to a NAT on another subnet.
-    default: { get_secret: private_subnet_id }
-
   availability_zone:
     description: >
       The availability zone where to create the VM, should be in the same availability zone as public_subnet_id.
@@ -181,6 +175,17 @@ node_templates:
             - '057448758665'
       client_config: *client_config
 
+  ip:
+    type: cloudify.nodes.aws.ec2.ElasticIP
+    properties:
+      resource_config:
+        kwargs:
+          Domain: 'vpc'
+      client_config: *client_config
+    relationships:
+      - type: cloudify.relationships.depends_on
+        target: nic
+
   nic:
     type: cloudify.nodes.aws.ec2.Interface
     properties:
@@ -203,17 +208,6 @@ node_templates:
               SubnetId: { get_input: public_subnet_id }
               Groups:
               - { get_attribute: [ security_group, aws_resource_id ] }
-
-  ip:
-    type: cloudify.nodes.aws.ec2.ElasticIP
-    properties:
-      resource_config:
-        kwargs:
-          Domain: 'vpc'
-      client_config: *client_config
-    relationships:
-      - type: cloudify.relationships.depends_on
-        target: nic
 
   security_group_rules:
     type: cloudify.nodes.aws.ec2.SecurityGroupRuleIngress
@@ -260,20 +254,6 @@ node_templates:
       client_config: *client_config
       use_external_resource: true
       resource_id: { get_input: public_subnet_id }
-      resource_config:
-        kwargs:
-          CidrBlock: 'N/A'
-          AvailabilityZone: 'N/A'
-    relationships:
-      - type: cloudify.relationships.depends_on
-        target: vpc
-
-  private_subnet:
-    type: cloudify.nodes.aws.ec2.Subnet
-    properties:
-      client_config: *client_config
-      use_external_resource: true
-      resource_id: { get_input: private_subnet_id }
       resource_config:
         kwargs:
           CidrBlock: 'N/A'
