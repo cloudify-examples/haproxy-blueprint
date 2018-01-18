@@ -240,8 +240,8 @@ node_templates:
     properties:
       resource_config:
         kwargs:
-          GroupName: SaltExampleSecurityGroup
-          Description: Created by salt-blueprint aws-blueprint.yaml.
+          GroupName: HaProxySecurityGroup
+          Description: Created by haproxy-blueprint aws-blueprint.yaml.
           VpcId: { get_input: vpc_id }
       client_config: *client_config
     relationships:
