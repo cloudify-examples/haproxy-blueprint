@@ -2,7 +2,7 @@ tosca_definitions_version: cloudify_dsl_1_3
 
 imports:
   - http://www.getcloudify.org/spec/cloudify/4.2/types.yaml
-  - http://www.getcloudify.org/spec/utilities-plugin/1.4.2.1/plugin.yaml
+  - http://www.getcloudify.org/spec/utilities-plugin/1.4.4/plugin.yaml
   - http://www.getcloudify.org/spec/diamond-plugin/1.3.5/plugin.yaml
   - http://www.getcloudify.org/spec/awssdk-plugin/1.2.0.1/plugin.yaml
   - https://github.com/cloudify-cosmo/cloudify-aws-plugin/releases/download/1.5.1.2/plugin.yaml
@@ -12,8 +12,8 @@ inputs:
 
   ami:
     description: >
-      An AWS AMI. Tested with a Centos 7.0 image.
-    default: { get_secret: centos_core_image }
+      An AWS AMI. Tested with a Centos 7.3 image.
+    default: { get_attribute: [ centos_core_ami, aws_resource_id ] }
 
   instance_type:
     description: >
@@ -35,12 +35,6 @@ inputs:
       The ID of the public subnet in vpc_id.
       This subnet should allow elastic IPs and it should also have either a NAT gateway or NAT instance.
     default: { get_secret: public_subnet_id }
-
-  private_subnet_id:
-    description: >
-      The ID of the private subnet in vpc_id.
-      This subnet should have internet routing to a NAT on another subnet.
-    default: { get_secret: private_subnet_id }
 
   availability_zone:
     description: >
@@ -69,6 +63,9 @@ inputs:
       port: { get_input: application_port }
       maxconn: 32
 
+  manager_network:
+    default: default
+
 dsl_definitions:
 
     aws_config: &aws_config
@@ -76,6 +73,11 @@ dsl_definitions:
       aws_secret_access_key: { get_secret: aws_secret_access_key }
       ec2_region_name: { get_secret: ec2_region_name }
       ec2_region_endpoint: { get_secret: ec2_region_endpoint }
+
+    client_config: &client_config
+      aws_access_key_id: { get_secret: aws_access_key_id }
+      aws_secret_access_key: { get_secret: aws_secret_access_key }
+      region_name: { get_secret: ec2_region_name }
 
 node_templates:
 
@@ -99,6 +101,21 @@ node_templates:
             frontend_port: { get_input: application_port }
             update_backends:
               manager: { get_input: backend }
+      cloudify.interfaces.monitoring:
+        start:
+          implementation: diamond.diamond_agent.tasks.add_collectors
+          inputs:
+            collectors_config:
+              HAProxyCollector:
+                config:
+                  url: http://127.0.0.1:9000/haproxy_stats;csv
+              CPUCollector: {}
+              MemoryCollector: {}
+              LoadAverageCollector: {}
+              DiskUsageCollector:
+                config:
+                  devices: x?vd[a-z]+[0-9]*$
+              NetworkCollector: {}
     relationships:
     - type: cloudify.relationships.contained_in
       target: host
@@ -109,7 +126,8 @@ node_templates:
     type: cloudify.aws.nodes.Instance
     properties:
       agent_config:
-        install_method: remote
+        network: { get_input: manager_network }
+        install_method: init_script
         user: { get_input: agent_user }
         port: 22
         key: { get_input: agent_key_private }
@@ -117,70 +135,142 @@ node_templates:
       image_id: { get_input: ami }
       instance_type: { get_input: instance_type }
     relationships:
-      - type: cloudify.aws.relationships.instance_connected_to_subnet
-        target: public_subnet
-      - type: cloudify.aws.relationships.instance_connected_to_security_group
-        target: security_group
-      - type: cloudify.aws.relationships.instance_connected_to_elastic_ip
-        target: ip
+      - type: cloudify.aws.relationships.instance_connected_to_eni
+        target: nic
       - type: cloudify.relationships.depends_on
         target: cloudify_host_cloud_config
+      - type: cloudify.relationships.depends_on
+        target: centos_core_ami
     interfaces:
       cloudify.interfaces.lifecycle:
         create:
           implementation: aws.cloudify_aws.ec2.instance.create
           inputs:
             args:
+              image_id: { get_input: ami }
               placement: { get_input: availability_zone }
               user_data: { get_attribute: [ cloudify_host_cloud_config, cloud_config ] }
+      cloudify.interfaces.monitoring_agent:
+        install:
+          implementation: diamond.diamond_agent.tasks.install
+          inputs:
+            diamond_config:
+              default:
+                interval: 1
+        start: diamond.diamond_agent.tasks.start
+        stop: diamond.diamond_agent.tasks.stop
+        uninstall: diamond.diamond_agent.tasks.uninstall
 
-  security_group:
-    type: cloudify.aws.nodes.SecurityGroup
+  centos_core_ami:
+    type: cloudify.nodes.aws.ec2.Image
     properties:
-      aws_config: *aws_config
-      description: Security group for Kubernetes Cluster
-      rules:
-        - ip_protocol: tcp
-          from_port: 0
-          to_port: 65535
-          cidr_ip: 0.0.0.0/0
-        - ip_protocol: udp
-          from_port: 0
-          to_port: 65535
-          cidr_ip: 0.0.0.0/0
-        - ip_protocol: icmp
-          from_port: -1
-          to_port: -1
-          cidr_ip: 0.0.0.0/0
-    relationships:
-      - type: cloudify.aws.relationships.security_group_contained_in_vpc
-        target: vpc
+      resource_config:
+        kwargs:
+          Filters:
+          - Name: name
+            Values:
+            - 'CentOS 7.3.1611 x86_64 with cloud-init (HVM)'
+          - Name: owner-id
+            Values:
+            - '057448758665'
+      client_config: *client_config
 
   ip:
-    type: cloudify.aws.nodes.ElasticIP
+    type: cloudify.nodes.aws.ec2.ElasticIP
     properties:
-      aws_config: *aws_config
-      domain: vpc
+      resource_config:
+        kwargs:
+          Domain: 'vpc'
+      client_config: *client_config
+    relationships:
+      - type: cloudify.relationships.depends_on
+        target: nic
+
+  nic:
+    type: cloudify.nodes.aws.ec2.Interface
+    properties:
+      client_config: *client_config
+      resource_config:
+        kwargs:
+          Description: Created by haproxy-blueprint aws-blueprint.yaml.
+          SubnetId: { get_input: public_subnet_id }
+    relationships:
+      - type: cloudify.relationships.depends_on
+        target: public_subnet
+      - type: cloudify.relationships.depends_on
+        target: security_group
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        configure:
+          inputs:
+            resource_config:
+              Description: Created by haproxy-blueprint aws-blueprint.yaml.
+              SubnetId: { get_input: public_subnet_id }
+              Groups:
+              - { get_attribute: [ security_group, aws_resource_id ] }
+
+  security_group_rules:
+    type: cloudify.nodes.aws.ec2.SecurityGroupRuleIngress
+    properties:
+      client_config: *client_config
+      resource_config:
+        kwargs:
+          IpPermissions:
+          - IpProtocol: tcp
+            FromPort: 0
+            ToPort: 65535
+            IpRanges:
+            - CidrIp: 0.0.0.0/0
+          - IpProtocol: udp
+            FromPort: 0
+            ToPort: 65535
+            IpRanges:
+            - CidrIp: 0.0.0.0/0
+          - IpProtocol: icmp
+            FromPort: -1
+            ToPort: -1
+            IpRanges:
+            - CidrIp: 0.0.0.0/0
+    relationships:
+    - type: cloudify.relationships.contained_in
+      target: security_group
+
+  security_group:
+    type: cloudify.nodes.aws.ec2.SecurityGroup
+    properties:
+      resource_config:
+        kwargs:
+          GroupName: HaProxySecurityGroup
+          Description: Created by haproxy-blueprint aws-blueprint.yaml.
+          VpcId: { get_input: vpc_id }
+      client_config: *client_config
+    relationships:
+    - type: cloudify.relationships.depends_on
+      target: vpc
 
   public_subnet:
-    type: cloudify.aws.nodes.Subnet
+    type: cloudify.nodes.aws.ec2.Subnet
     properties:
-      aws_config: *aws_config
+      client_config: *client_config
       use_external_resource: true
       resource_id: { get_input: public_subnet_id }
-      cidr_block: N/A
-      availability_zone: N/A
+      resource_config:
+        kwargs:
+          CidrBlock: 'N/A'
+          AvailabilityZone: 'N/A'
     relationships:
-      - type: cloudify.aws.relationships.subnet_contained_in_vpc
+      - type: cloudify.relationships.depends_on
         target: vpc
 
   vpc:
-    type: cloudify.aws.nodes.VPC
+    type: cloudify.nodes.aws.ec2.Vpc
     properties:
-      aws_config: *aws_config
+      client_config: *client_config
       use_external_resource: true
       resource_id: { get_input: vpc_id }
-      cidr_block: N/A
+      resource_config:
+        kwargs:
+          CidrBlock: 'N/A'
 
 outputs:
 
