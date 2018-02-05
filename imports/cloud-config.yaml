@@ -1,14 +1,3 @@
-inputs:
-
-  backend_ip_1:
-    default: 127.0.0.1
-
-  backend_ip_2:
-    default: 127.0.0.1
-
-  backend_port:
-    default: 3306
-
 node_templates:
 
   cloudify_host_cloud_config:
