@@ -27,6 +27,7 @@ inputs:
     description: >
       An Openstack Image ID. Tested with a Centos 7 image.
     type: string
+    default: { get_secret: centos_core_image }
 
   flavor:
     description: >
