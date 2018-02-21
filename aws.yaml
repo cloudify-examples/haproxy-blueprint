@@ -1,10 +1,9 @@
 tosca_definitions_version: cloudify_dsl_1_3
 
 imports:
-  - http://www.getcloudify.org/spec/cloudify/4.2/types.yaml
-  - http://www.getcloudify.org/spec/utilities-plugin/1.4.5/plugin.yaml
-  - http://www.getcloudify.org/spec/awssdk-plugin/1.2.0.3/plugin.yaml
-  - https://github.com/cloudify-cosmo/cloudify-aws-plugin/releases/download/1.5.1.2/plugin.yaml
+  - http://www.getcloudify.org/spec/cloudify/4.3/types.yaml
+  - plugin:cloudify-awssdk-plugin
+  - plugin:cloudify-utilities-plugin
   - imports/cloud-config.yaml
 
 inputs:
@@ -94,35 +93,38 @@ node_templates:
       target: cloud_config_completion
 
   host:
-    type: cloudify.aws.nodes.Instance
+    type: cloudify.nodes.aws.ec2.Instances
     properties:
       agent_config:
         network: { get_input: manager_network }
         install_method: init_script
         user: { get_input: agent_user }
-        port: 22
-        key: { get_input: agent_key_private }
-      aws_config: *aws_config
-      image_id: { get_input: ami }
-      instance_type: { get_input: instance_type }
+        key: { get_secret: agent_key_private }
+      resource_config:
+        MaxCount: 1
+        MinCount: 1
+        ImageId: { get_input: ami }
+        InstanceType: { get_input: instance_type }
+        kwargs:
+          BlockDeviceMappings:
+          - DeviceName: '/dev/sda1'
+            Ebs:
+              DeleteOnTermination: True
+          Placement:
+            AvailabilityZone: { get_attribute: [ aws, deployment, outputs, availability_zone ] }
+          UserData: { get_attribute: [ cloudify_host_cloud_config, cloud_config ] }
+      client_config: *client_config
     relationships:
-      - type: cloudify.aws.relationships.instance_connected_to_eni
+      - type: cloudify.relationships.depends_on
         target: nic
       - type: cloudify.relationships.depends_on
         target: ip
       - type: cloudify.relationships.depends_on
+        target: security_group_rules
+      - type: cloudify.relationships.depends_on
         target: cloudify_host_cloud_config
       - type: cloudify.relationships.depends_on
         target: centos_core_ami
-    interfaces:
-      cloudify.interfaces.lifecycle:
-        create:
-          implementation: aws.cloudify_aws.ec2.instance.create
-          inputs:
-            args:
-              image_id: { get_input: ami }
-              placement: { get_attribute: [ aws, deployment, outputs, availability_zone ] }
-              user_data: { get_attribute: [ cloudify_host_cloud_config, cloud_config ] }
 
   centos_core_ami:
     type: cloudify.nodes.aws.ec2.Image
