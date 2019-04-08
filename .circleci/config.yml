@@ -18,9 +18,9 @@ jobs:
 
     steps:
       - checkout
-      - run: wget http://cloudify-release-eu.s3.amazonaws.com/cloudify/18.4.17/release/cloudify-manager-docker-image-18.4.17.tar
-      - run: docker load -i cloudify-manager-docker-image-18.4.17.tar
-      - run: rm cloudify-manager-docker-image-18.4.17.tar
+      - run: wget http://repository.cloudifysource.org/cloudify/4.5.5/ga-release/cloudify-docker-manager-4.5.5ga.tar
+      - run: docker load -i cloudify-docker-manager-4.5.5ga.tar
+      - run: rm cloudify-docker-manager-4.5.5ga.tar
       - run: docker run --name cfy_manager -d --restart unless-stopped -v /sys/fs/cgroup:/sys/fs/cgroup:ro --tmpfs /run --tmpfs /run/lock --security-opt seccomp:unconfined --cap-add SYS_ADMIN --network host docker-cfy-manager:latest
       - run: pip install cloudify
       - run: cfy profiles use localhost -u admin -p admin -t default_tenant
